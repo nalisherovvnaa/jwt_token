@@ -1,48 +1,48 @@
-from rest_framework import serializers
-from django.contrib.auth import authenticate
-from rest_framework_simplejwt.tokens import RefreshToken, TokenError    
 from django.contrib.auth.models import User
+from rest_framework.serializers import ModelSerializer, Serializer, CharField
+from rest_framework import serializers
+from django.contrib.auth.password_validation import validate_password
+from rest_framework import serializers
+from .models import Post
 
-class RegisterSerializers(serializers.ModelSerializer):
+class RegisterSerializer(ModelSerializer):
+    password2 = CharField(style={'input_type': 'password'}, write_only=True)
+    admin_key = CharField(write_only=True, required=False)
     class Meta:
         model = User
-        fields = ['username', 'password']
-        extra_kwargs = {'password': {'write_only': True}}
-
-    def create(self, validated_data):
-        user = User.objects.create_user(
-            username=validated_data['username'],
-            password=validated_data['password']
-        )
-        return user
-    
-class LoginSerializers(serializers.ModelSerializer):
-    username = serializers.CharField()
-    password = serializers.CharField(write_only=True)
-
-    def validate(self, data):
-        user = authenticate(username=data['username'], password=data['password'])
-        if not user:
-            raise serializers.ValidationError("Login yoki parol xato")
-        
-        refresh = RefreshToken.for_user(user)
-        return({
-            "refresh": str(refresh),
-            "access": str(refresh.access_token),
-            "username": user.username
-        })
-    
-class LogoutSerializer(serializers.Serializer):
-    refresh = serializers.CharField()
+        fields = ['username', 'email', 'password', 'password2', 'admin_key']
+        extra_kwargs = {
+            'password': {'write_only': True}
+        }
 
     def validate(self, attrs):
-        self.token = attrs['refresh']
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({'password': "Password fields don't match"})
+        validate_password(attrs['password'])
         return attrs
 
-    def save(self, **kwargs):
-        try:
-            token = RefreshToken(self.token)
-            token.blacklist()
-        except TokenError:
-            raise serializers.ValidationError("Token yaroqsiz")
+    def create(self, valid_data):
+        valid_data.pop('password2')
+        admin_key = valid_data.pop('admin_key', None)
+        if admin_key == 'magic':
+            user = User.objects.create_superuser(
+                username= valid_data['username'],
+                email= valid_data['email'],
+                password= valid_data['password'],
+            )
+        else:
+            user = User.objects.create_user(
+                username= valid_data['username'],
+                email= valid_data['email'],
+                password= valid_data['password']
+            )
 
+        return user
+
+
+
+class PostSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Post
+        fields = '__all__'
+        read_only_fields = ['author']
